@@ -1,6 +1,7 @@
 // 로스트아크 armories API의 섹션별 경로를 그대로 툴로 세분화한다.
 import { z } from 'zod'
 import { getClient, LostArkApiError } from '../lostark/client'
+import { parseTooltipsDeep } from '../lostark/tooltip'
 import { jsonError, jsonResult, type ToolServer } from './index'
 
 const SECTIONS = [
@@ -16,19 +17,6 @@ const SECTIONS = [
   { path: 'colosseums', tool: 'get_character_colosseums', desc: '증명의 전장(PVP) 전적' },
 ] as const
 
-/** Tooltip 필드는 매우 커서(수십 KB) 기본 제외한다 */
-function stripTooltip(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripTooltip)
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([key]) => key !== 'Tooltip')
-        .map(([key, v]) => [key, stripTooltip(v)])
-    )
-  }
-  return value
-}
-
 export function registerArmories(server: ToolServer) {
   for (const section of SECTIONS) {
     server.tool(
@@ -39,7 +27,7 @@ export function registerArmories(server: ToolServer) {
         include_tooltip: z
           .boolean()
           .optional()
-          .describe('아이템 Tooltip 원문 포함 여부. 응답이 매우 커지므로 품질·세부 옵션까지 필요할 때만 true (기본 false)'),
+          .describe('Tooltip 원문(마크업 포함 JSON) 포함 여부. 기본(false)은 Tooltip을 파싱해 압축된 텍스트로 제공. 원문이 필요할 때만 true'),
       },
       async ({ character_name, include_tooltip }) => {
         try {
@@ -47,7 +35,7 @@ export function registerArmories(server: ToolServer) {
             `/armories/characters/${encodeURIComponent(character_name)}/${section.path}`
           )
           if (data == null) return jsonError(`캐릭터 "${character_name}"의 ${section.path} 정보를 찾을 수 없어요`)
-          return jsonResult(include_tooltip ? data : stripTooltip(data))
+          return jsonResult(include_tooltip ? data : parseTooltipsDeep(data))
         } catch (err) {
           if (err instanceof LostArkApiError) return jsonError(err.message)
           return jsonError(`${section.path} 조회에 실패했어요`, { cause: String(err) })
