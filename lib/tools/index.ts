@@ -1,6 +1,7 @@
 // 툴 1개 = 파일 1개. route.ts는 registerTools만 호출 (얇은 라우트)
 import type { createMcpHandler } from 'mcp-handler'
 import { registerArmories } from './armories'
+import { registerSearchMarketItems } from './market'
 import { registerPing } from './ping'
 import { registerGetSiblings } from './siblings'
 
@@ -11,6 +12,7 @@ export function registerTools(server: ToolServer) {
   registerPing(server)
   registerGetSiblings(server)
   registerArmories(server)
+  registerSearchMarketItems(server)
 }
 
 /** 툴 응답 공통 헬퍼 — 모든 응답은 JSON text content */
