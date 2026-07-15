@@ -10,6 +10,15 @@ export class LostArkApiError extends Error {
   }
 }
 
+/** 요청 시점에 환경변수에서 키를 읽는다 (서버리스 환경 대응) */
+export function getClient(): LostArkClient {
+  const apiKey = process.env.API_KEY
+  if (!apiKey) {
+    throw new LostArkApiError('환경변수 API_KEY가 설정되지 않았습니다. 로스트아크 오픈 API 키를 넣어주세요.', 0)
+  }
+  return new LostArkClient(apiKey)
+}
+
 export class LostArkClient {
   constructor(private readonly apiKey: string) {}
 
