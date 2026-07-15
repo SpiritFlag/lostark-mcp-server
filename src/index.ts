@@ -1,33 +1,62 @@
 #!/usr/bin/env node
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { timingSafeEqual } from "node:crypto";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import express from "express";
 import { loadConfig } from "./config.js";
+import { createServer } from "./server.js";
 
-async function main(): Promise<void> {
-  loadConfig();
-
-  const server = new McpServer({
-    name: "lostark-mcp-server",
-    version: "0.1.0",
-  });
-
-  server.registerTool(
-    "ping",
-    {
-      description: "서버 동작 확인용 툴. 항상 'pong'을 반환합니다.",
-      inputSchema: {},
-    },
-    async () => ({
-      content: [{ type: "text", text: "pong" }],
-    })
-  );
-
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("lostark-mcp-server가 stdio에서 실행 중입니다.");
+function isValidToken(given: string, expected: string): boolean {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
-main().catch((error) => {
+function main(): void {
+  const config = loadConfig();
+  const app = express();
+  app.use(express.json());
+
+  // claude.ai 웹 커넥터는 커스텀 헤더를 지원하지 않으므로 URL 경로의 토큰으로 인증한다.
+  app.post("/mcp/:token", async (req, res) => {
+    if (!isValidToken(req.params.token, config.authToken)) {
+      res.status(404).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Not Found" },
+        id: null,
+      });
+      return;
+    }
+    try {
+      const server = createServer();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
+      res.on("close", () => {
+        void transport.close();
+        void server.close();
+      });
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      console.error("MCP 요청 처리 실패:", error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: null,
+        });
+      }
+    }
+  });
+
+  app.listen(config.port, () => {
+    console.error(`lostark-mcp-server가 포트 ${config.port}에서 실행 중입니다.`);
+  });
+}
+
+try {
+  main();
+} catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);
-});
+}
